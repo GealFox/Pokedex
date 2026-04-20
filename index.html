@@ -165,7 +165,6 @@
             line-height: 1.4;
             box-shadow: inset 2px 2px 5px rgba(0,0,0,0.4);
             overflow-y: auto;
-            word-wrap: break-word;
         }
 
         .panel-off { background-color: #1a4a75; color: #0a253d; opacity: 0.6; }
@@ -208,9 +207,6 @@
 
         .d-pad { display: grid; grid-template-columns: repeat(3, 22px); grid-template-rows: repeat(3, 22px); }
         .d-btn { background: #333; border: 1px solid #000; }
-
-        .alert-text { color: #8b0000; animation: blink 1s infinite; }
-        @keyframes blink { 50% { opacity: 0; } }
     </style>
 </head>
 <body>
@@ -258,9 +254,6 @@
 </div>
 
 <script>
-    // La API Key ya no está en el frontend por seguridad. 
-    // Ahora Vercel se encarga de manejarla en el backend.
-    
     const video = document.getElementById('camera-feed');
     const photoPreview = document.getElementById('photo-preview');
     const screenWrapper = document.getElementById('screen-wrapper');
@@ -287,7 +280,6 @@
     async function togglePower() {
         if (!isOn) {
             try {
-                // Intenta cámara trasera, sino usa cualquiera disponible
                 try {
                     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: "environment" } }, audio: false });
                 } catch (e) {
@@ -304,9 +296,8 @@
                 powerBtn.innerText = "OFF";
                 scanBtn.disabled = false;
                 resultDisplay.classList.remove('panel-off');
-                resultDisplay.classList.remove('api-error');
                 
-                resultDisplay.innerHTML = "POKÉDEX VERCEL ESTRICTA.<br>ENERGÍA CONECTADA.";
+                resultDisplay.innerHTML = "POKÉDEX ESTRICTA.<br>ENERGÍA CONECTADA.";
                 playSound(600);
                 hablar("Pokédex en línea.");
 
@@ -340,7 +331,6 @@
         window.speechSynthesis.speak(u);
     }
 
-    // Consulta la PokeAPI Real para traer descripciones
     async function getPokemonData(pokemonName) {
         try {
             let query = pokemonName.toLowerCase().replace(/[^a-z0-9-]/g, '');
@@ -366,11 +356,15 @@
     scanBtn.addEventListener('click', async () => {
         if (!isOn || scanBtn.disabled) return;
 
+        if (!video.videoWidth) {
+            resultDisplay.innerHTML = "CÁMARA NO LISTA.";
+            return;
+        }
+
         scanBtn.disabled = true;
         scanner.style.display = 'block';
         resultDisplay.innerHTML = "ANALIZANDO OBJETIVO...";
         
-        // Optimización de la imagen
         const tempCanvas = document.createElement('canvas');
         const ctx = tempCanvas.getContext('2d');
         const MAX_WIDTH = 600; 
@@ -387,43 +381,35 @@
         playSound(1000);
 
         try {
-            // ORDEN ESTRICTA PARA LA IA
             const promptEstricto = `
                 Eres una máquina Pokédex estricta. 
                 Si en la imagen ves un Pokémon (peluche, dibujo o persona disfrazada), responde ÚNICAMENTE con el nombre del Pokémon en minúsculas (ejemplo: pikachu).
-                Si la imagen muestra CUALQUIER OTRA COSA (una persona normal sin disfraz de pokemon, una impresora 3D, una taza, un perro real, muebles, un auto, etc), responde ÚNICAMENTE con la palabra: ninguno
+                Si la imagen muestra CUALQUIER OTRA COSA, responde ÚNICAMENTE con: ninguno
             `;
 
-            // PREPARAMOS EL PAQUETE (Igual que antes, para que tu backend no se rompa)
-            const payload = {
-                contents: [{ parts: [{ text: promptEstricto }, { inlineData: { mimeType: "image/jpeg", data: base64Data } }] }]
-            };
-
-            // =========================================================================
-            // LA MAGIA: Nos conectamos a tu servidor de Vercel en vez de a Google directo
-            // =========================================================================
-            const url = `/api/scan`; // Apunta a tu archivo scan.js
-            
-            const res = await fetch(url, {
+            // 🔥 BACKEND VERCEL - AJUSTADO PARA LEER ERRORES
+            const res = await fetch("/api/scan", {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [
+                            { text: promptEstricto },
+                            { inlineData: { mimeType: "image/jpeg", data: base64Data } }
+                        ]
+                    }]
+                })
             });
             
-            if (!res.ok) {
-                const errObj = await res.json();
-                throw new Error(errObj.error?.message || "Error conectando a Vercel");
+            const dataAPI = await res.json();
+
+            // Atrapamos el error si Google le mandó un error a Vercel
+            if (!res.ok || dataAPI.error) {
+                throw new Error(dataAPI.error?.message || "Error en backend Vercel");
             }
             
-            // Recibimos la respuesta que tu Vercel nos reenvió desde Google
-            const dataAPI = await res.json();
-            
-            // Si la API responde un error interno (ej: clave inválida configurada en Vercel)
-            if(dataAPI.error) throw new Error(dataAPI.error.message);
+            const aiRespuesta = dataAPI.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toLowerCase() || "";
 
-            const aiRespuesta = dataAPI.candidates[0].content.parts[0].text.trim().toLowerCase();
-
-            // Lógica de Reconocimiento Estricta
             if (aiRespuesta.includes("ninguno") || aiRespuesta === "") {
                 playSound(200);
                 resultDisplay.innerHTML = "OBJETO DESCONOCIDO.<br>NO SE DETECTÓ NINGÚN POKÉMON.";
@@ -443,9 +429,9 @@
             }
 
         } catch (e) {
-            console.error("Error completo:", e);
+            console.error(e);
             let msjError = e.message.substring(0, 55).toUpperCase();
-            resultDisplay.innerHTML = `ERROR DE SERVIDOR:<br>${msjError}`;
+            resultDisplay.innerHTML = `ERROR DE RED:<br>${msjError}`;
             playSound(200);
             photoPreview.style.display = 'none'; 
         } finally {
