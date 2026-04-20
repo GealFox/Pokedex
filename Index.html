@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Pokédex Visión Real Pro</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+:root {
+    --pokedex-red: #dc0a2d;
+    --pokedex-dark-red: #8b0000;
+}
+
+html, body {
+    margin:0;
+    padding:0;
+    width:100%;
+    height:100%;
+    background:#050505;
+    overflow:hidden;
+    position:fixed;
+}
+
+.pokedex-container {
+    position:absolute;
+    top:0;bottom:0;left:0;right:0;
+    margin:auto;
+    width:92%;
+    max-width:380px;
+    background:var(--pokedex-red);
+    border-radius:20px;
+    border:4px solid #1a1a1a;
+    box-shadow:0 8px 0 var(--pokedex-dark-red),0 15px 30px rgba(0,0,0,0.8);
+    padding:15px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+}
+
+.big-blue-light {
+    width:45px;height:45px;
+    background:#222;
+    border:4px solid #eee;
+    border-radius:50%;
+}
+.light-on {
+    background:#51adff;
+    box-shadow:0 0 20px #51adff;
+}
+
+.screen-border {
+    background:#dedede;
+    padding:15px 15px 30px;
+    border-radius:10px 10px 10px 35px;
+    border:3px solid #333;
+}
+
+.main-screen-container {
+    background:#000;
+    width:100%;
+    aspect-ratio:4/3;
+    border-radius:5px;
+    border:4px solid #444;
+    position:relative;
+    overflow:hidden;
+}
+
+.screen-content-wrapper {
+    width:100%;
+    height:100%;
+    display:none;
+}
+
+.anim-on { display:block !important; }
+
+video, img {
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    position:absolute;
+}
+
+.scanning-line {
+    position:absolute;
+    width:100%;
+    height:4px;
+    background:#51adff;
+    animation:scan 1.5s linear infinite;
+    display:none;
+}
+
+@keyframes scan {
+    0%{top:0;}
+    100%{top:100%;}
+}
+
+.info-panel {
+    background:#51adff;
+    border:3px solid #333;
+    padding:10px;
+    min-height:80px;
+    font-family:'Press Start 2P';
+    font-size:0.55rem;
+}
+
+.panel-off {
+    background:#1a4a75;
+    opacity:0.6;
+}
+
+.btn-scan {
+    background:#333;
+    color:#fff;
+    padding:12px;
+    border-radius:50px;
+    border:4px solid #111;
+}
+
+.power-btn {
+    width:45px;height:45px;
+    background:#600;
+    border-radius:50%;
+    color:#fff;
+}
+.power-btn.on {
+    background:#0f0;
+    color:#040;
+}
+</style>
+</head>
+
+<body>
+
+<div class="pokedex-container">
+
+<div class="big-blue-light" id="status-light"></div>
+
+<div class="screen-border">
+<div class="main-screen-container">
+<div id="screen-wrapper" class="screen-content-wrapper">
+<video id="camera-feed" autoplay playsinline muted></video>
+<img id="photo-preview">
+<div id="scanner" class="scanning-line"></div>
+</div>
+</div>
+</div>
+
+<div id="result-display" class="info-panel panel-off">
+SISTEMA APAGADO
+</div>
+
+<button id="power-btn" class="power-btn">ON</button>
+<button id="scan-btn" class="btn-scan" disabled>Escanear</button>
+
+</div>
+
+<script>
+
+const video = document.getElementById('camera-feed');
+const photoPreview = document.getElementById('photo-preview');
+const screenWrapper = document.getElementById('screen-wrapper');
+const scanBtn = document.getElementById('scan-btn');
+const powerBtn = document.getElementById('power-btn');
+const resultDisplay = document.getElementById('result-display');
+const scanner = document.getElementById('scanner');
+const statusLight = document.getElementById('status-light');
+
+let stream = null;
+let isOn = false;
+
+function playSound(freq){
+    const ctx=new AudioContext();
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value=freq;
+    gain.gain.value=0.05;
+    osc.start();
+    osc.stop(ctx.currentTime+0.1);
+}
+
+async function togglePower(){
+    if(!isOn){
+        try{
+            stream=await navigator.mediaDevices.getUserMedia({video:true});
+            video.srcObject=stream;
+            isOn=true;
+
+            screenWrapper.classList.add('anim-on');
+            statusLight.classList.add('light-on');
+            powerBtn.classList.add('on');
+            powerBtn.innerText="OFF";
+            scanBtn.disabled=false;
+
+            resultDisplay.classList.remove('panel-off');
+            resultDisplay.innerHTML="POKÉDEX ACTIVA";
+
+        }catch{
+            resultDisplay.innerHTML="CÁMARA BLOQUEADA";
+        }
+    }else{
+        stream.getTracks().forEach(t=>t.stop());
+        isOn=false;
+        screenWrapper.classList.remove('anim-on');
+        scanBtn.disabled=true;
+        powerBtn.innerText="ON";
+        resultDisplay.innerHTML="SISTEMA APAGADO";
+    }
+}
+
+async function getPokemonData(name){
+    const res=await fetch(`https://pokeapi.co/api/v2/pokemon-species/${name}`);
+    const data=await res.json();
+    return data;
+}
+
+scanBtn.addEventListener('click', async ()=>{
+
+    if(!video.videoWidth){
+        resultDisplay.innerHTML="CÁMARA NO LISTA";
+        return;
+    }
+
+    scanner.style.display='block';
+
+    const canvas=document.createElement('canvas');
+    canvas.width=600;
+    canvas.height=video.videoHeight*(600/video.videoWidth);
+
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+
+    const base64=canvas.toDataURL('image/jpeg').split(',')[1];
+
+    try{
+
+        const res=await fetch("/api/scan",{
+            method:"POST",
+            headers:{ "Content-Type":"application/json"},
+            body:JSON.stringify({
+                contents:[{
+                    parts:[
+                        {text:"Detecta pokemon o responde ninguno"},
+                        {inlineData:{mimeType:"image/jpeg",data:base64}}
+                    ]
+                }]
+            })
+        });
+
+        const data=await res.json();
+        const respuesta=data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toLowerCase();
+
+        if(!respuesta || respuesta.includes("ninguno")){
+            resultDisplay.innerHTML="NO ES UN POKÉMON";
+        }else{
+            resultDisplay.innerHTML="DETECTADO: "+respuesta.toUpperCase();
+        }
+
+    }catch(e){
+        resultDisplay.innerHTML="ERROR";
+    }
+
+    scanner.style.display='none';
+});
+
+powerBtn.addEventListener('click',togglePower);
+
+</script>
+
+</body>
+</html>
