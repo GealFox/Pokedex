@@ -431,8 +431,8 @@
 
         } catch (e) {
             console.error(e);
-            let msjError = e.message.substring(0, 55).toUpperCase();
-            resultDisplay.innerHTML = `ERROR DE RED:<br>${msjError}`;
+            console.error("ERROR COMPLETO:", e);
+resultDisplay.innerHTML = `ERROR:<br>${e.message.toUpperCase()}`;
             playSound(200);
             photoPreview.style.display = 'none'; 
         } finally {
